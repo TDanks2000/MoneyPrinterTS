@@ -4,6 +4,7 @@
   "main": "index.js",
   "license": "MIT",
   "dependencies": {
+    "ffmpeg-static": "^5.2.0",
     "subtitle": "^4.2.1"
   }
 }
