@@ -9,20 +9,17 @@
   },
   "devDependencies": {
     "@types/colors": "^1.2.1",
-    "@types/node": "^20.11.17",
     "@types/uuid": "^9.0.8",
-    "nodemon": "^3.0.3",
-    "ts-node": "^10.9.2",
-    "typescript": "^5.3.3"
+    "nodemon": "^3.0.3"
   },
   "dependencies": {
     "@types/play-sound": "^1.1.2",
     "assemblyai": "^4.2.2",
-    "colors": "^1.4.0",
-    "dotenv": "^16.4.1",
     "fastify": "^4.26.0",
+    "ffmpeg-static": "^5.2.0",
     "openai": "^4.27.0",
     "play-sound": "^1.1.6",
+    "subtitle": "^4.2.1",
     "uuid": "^9.0.1"
   }
 }
