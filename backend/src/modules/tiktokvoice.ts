@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import playsound from 'play-sound';
 const player = playsound();
 
-const VOICES: string[] = [
+export const VOICES: string[] = [
   // DISNEY VOICES
   'en_us_ghostface', // Ghost Face
   'en_us_chewbacca', // Chewbacca
@@ -222,4 +222,4 @@ class TikTokVoice {
   }
 }
 
-export default TikTokVoice;
+export default new TikTokVoice();

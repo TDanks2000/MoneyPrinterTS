@@ -9,6 +9,7 @@ class GPT {
       switch (ai_model) {
         case 'gpt3.5-turbo':
         case 'gpt4':
+          console.log(ai_model);
           return (
             (
               await openai.chat.completions.create({
@@ -25,12 +26,17 @@ class GPT {
     }
   }
 
-  async generate_script(video_subject: string, total_paragraphs: number, ai_model: GPTModel): Promise<string> {
+  async generate_script(
+    video_subject: string,
+    total_paragraphs: number,
+    ai_model: GPTModel,
+    language: string,
+  ): Promise<string> {
     const prompt: string = `
 Generate a script for a video, depending on the subject of the video.
 Subject: ${video_subject}
 Number of paragraphs: ${total_paragraphs}
-
+Language: ${language}
 
 The script is to be returned as a string with the specified number of paragraphs.
 
@@ -44,6 +50,7 @@ Get straight to the point, don't start with unnecessary things like, "welcome to
 Obviously, the script should be related to the subject of the video.
 
 YOU MUST NOT INCLUDE ANY TYPE OF MARKDOWN OR FORMATTING IN THE SCRIPT, NEVER USE A TITLE.
+YOU MUST WRITE THE SCRIPT IN THE LANGUAGE SPECIFIED IN [LANGUAGE].
 ONLY RETURN THE RAW CONTENT OF THE SCRIPT. DO NOT INCLUDE "VOICEOVER", "NARRATOR" OR SIMILAR INDICATORS OF WHAT SHOULD BE SPOKEN AT THE BEGINNING OF EACH PARAGRAPH OR LINE. YOU MUST NOT MENTION THE PROMPT, OR ANYTHING ABOUT THE SCRIPT ITSELF. ALSO, NEVER TALK ABOUT THE AMOUNT OF PARAGRAPHS OR LINES. JUST WRITE THE SCRIPT.
 `;
 
@@ -171,3 +178,5 @@ ${script}
     return finalScript;
   }
 }
+
+export default new GPT();

@@ -44,7 +44,7 @@ class Video {
 
     const r = await fetch(url, {
       headers: {
-        authorization: process.env.ASSEMBLY_AI_API_KEY,
+        authorization: process.env.ASSEMBLY_AI_API_KE!,
       },
     });
 
@@ -199,3 +199,5 @@ class Video {
     });
   }
 }
+
+export default new Video();

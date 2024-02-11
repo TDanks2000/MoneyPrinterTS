@@ -3,11 +3,17 @@
   "version": "1.0.0",
   "main": "index.js",
   "license": "MIT",
+  "scripts": {
+    "start:dev": "cd ./backend && yarn start:dev"
+  },
   "dependencies": {
+    "@fastify/cors": "^9.0.1",
+    "adm-zip": "^0.5.10",
     "colors": "^1.4.0",
     "dotenv": "^16.4.1"
   },
   "devDependencies": {
+    "@types/adm-zip": "^0.5.5",
     "@types/node": "^20.11.17",
     "ts-node": "^10.9.2",
     "typescript": "^5.3.3"

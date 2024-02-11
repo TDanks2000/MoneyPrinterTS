@@ -1,5 +1,7 @@
 class Search {
-  async search_for_stock_videos(query: string, api_key: string, it: number, min_dur: number): Promise<string[]> {
+  async search_for_stock_videos(query: string, it: number, min_dur: number): Promise<string[]> {
+    const api_key = process.env.PEXELS_API_KEY!;
+
     const headers: RequestInit['headers'] = {
       Authorization: api_key,
     };
@@ -48,3 +50,5 @@ class Search {
     return videoUrls;
   }
 }
+
+export default new Search();
