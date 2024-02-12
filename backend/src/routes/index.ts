@@ -5,7 +5,7 @@ import colors from 'colors';
 import ffmpegPath from 'ffmpeg-static';
 import { exec } from 'node:child_process';
 import path from 'node:path';
-import uuid from 'uuid';
+import * as uuid from 'uuid';
 import gpt from '../modules/gpt';
 import search from '../modules/search';
 import tiktokvoice from '../modules/tiktokvoice';
@@ -109,7 +109,7 @@ const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
       //Define video_paths
       let video_paths: string[] = [];
 
-      console.log(colors.blue('[+] Downloading {len(video_urls)} videos...'));
+      console.log(colors.blue(`[+] Downloading ${video_urls.length} videos...`));
 
       //Save the videos
       for (const video_url of video_urls) {
@@ -124,7 +124,8 @@ const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
           const saved_video_path = await video.save_video(video_url, tempLoc);
           video_paths.push(saved_video_path);
         } catch (error) {
-          console.error(colors.red('[-] Could not download video: {video_url}'));
+          console.error(colors.red(`[-] Could not download video: ${video_url}`));
+          console.error(error);
         }
       }
 
@@ -212,7 +213,7 @@ function concatenateAudioClips(inputFilePaths: string[], outputFilePath: string)
   return new Promise((resolve, reject) => {
     const inputFiles = inputFilePaths.map((path) => `-i ${path}`).join(' ');
     const filter = inputFilePaths.map((_, index) => `[${index}:a:0]`).join('');
-    const command = `${ffmpegPath} ${inputFiles} -filter_complex "${filter}concat=n=${inputFilePaths.length}:v=0:a=1[a]" -map "[a]" ${outputFilePath}`;
+    const command = `${ffmpegPath} ${inputFiles} -filter_complex "${filter}concat=n=${inputFilePaths.length}:v=0:a=1[a]" -map "[a]" ${outputFilePath} -y`;
 
     exec(command, (error, stdout, stderr) => {
       if (error) {
@@ -229,12 +230,11 @@ function concatenateAudioClips(inputFilePaths: string[], outputFilePath: string)
 interface AudioInfo {
   duration: number;
   sampleRate: number;
-  channels: number;
 }
 
 function getAudioInfo(inputFilePath: string): Promise<AudioInfo> {
   return new Promise((resolve, reject) => {
-    const command = `${ffmpegPath} -i ${inputFilePath}`;
+    const command = `${ffmpegPath} -i ${inputFilePath} -f null -`;
 
     exec(command, (error, stdout, stderr) => {
       if (error) {
@@ -244,10 +244,10 @@ function getAudioInfo(inputFilePath: string): Promise<AudioInfo> {
       }
 
       const outputLines = stderr.split('\n');
+
       const info: AudioInfo = {
         duration: parseDuration(outputLines),
         sampleRate: parseSampleRate(outputLines),
-        channels: parseChannels(outputLines),
       };
 
       resolve(info);
@@ -280,16 +280,4 @@ function parseSampleRate(outputLines: string[]): number {
     throw new Error('Failed to parse sample rate');
   }
   return parseInt(sampleRateMatch[1]);
-}
-
-function parseChannels(outputLines: string[]): number {
-  const streamLine = outputLines.find((line) => line.includes('Audio') && line.includes('Hz'));
-  if (!streamLine) {
-    throw new Error('Audio stream information not found');
-  }
-  const channelsMatch = streamLine.match(/(\d+) channels/);
-  if (!channelsMatch) {
-    throw new Error('Failed to parse channels');
-  }
-  return parseInt(channelsMatch[1]);
 }

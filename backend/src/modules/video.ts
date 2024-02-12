@@ -3,7 +3,7 @@ import ffmpeg from 'ffmpeg-static';
 import { exec } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import uuid from 'uuid';
+import * as uuid from 'uuid';
 import { assemblyai } from '../utils';
 import VideoProcessor from '../utils/video';
 
@@ -44,7 +44,7 @@ class Video {
 
     const r = await fetch(url, {
       headers: {
-        authorization: process.env.ASSEMBLY_AI_API_KE!,
+        authorization: process.env.ASSEMBLY_AI_API_KEY!,
       },
     });
 
@@ -93,7 +93,7 @@ class Video {
    * @returns {string} The path to the generated subtitles.
    */
   async generate_subtitles(audio_path: string, sentences: string[], audio_clips: any[]): Promise<string> {
-    const subtitles_path = `../subtitles/${uuid.v4()}.srt`;
+    const subtitles_path = path.join(__dirname, `../../subtitles/${uuid.v4()}.srt`);
     let subtitles: string;
 
     if (process.env.ASSEMBLY_AI_API_KEY !== '') {
@@ -108,6 +108,7 @@ class Video {
     }
 
     try {
+      console.log(subtitles);
       await fs.promises.writeFile(subtitles_path, subtitles);
     } catch (error) {
       console.log(colors.red(`[-] Error writing subtitles to file: ${error}`));
@@ -128,7 +129,7 @@ class Video {
    */
   async combine_videos(video_paths: string[], max_duration: number, max_clip_duration: number): Promise<string> {
     const video_id = uuid.v4();
-    const combined_video_path = `../temp/${video_id}.mp4`;
+    const combined_video_path = path.join(__dirname, `../../temp/${video_id}.mp4`);
 
     // Required duration of each clip
     const req_dur = max_duration / video_paths.length;
@@ -142,14 +143,15 @@ class Video {
     // #add downloaded clips over and over until the duration of the audio (max_duration) has been reached
     while (tot_dur < max_duration) {
       for (const video_path of video_paths) {
-        let clip = new VideoProcessor(video_path, `../temp/temp/${video_id}.mp4`);
+        const outputPath = path.join(__dirname, `../../temp/${video_id}.mp4`);
+        let clip = new VideoProcessor(video_path, outputPath);
         let clip_details = await clip.getVideoInfo();
         await clip.removeAudio();
 
         // check if clip is longer than the remaning audio
-        if (max_duration - tot_dur < clip_details.duration) clip.subclip(0, max_duration - tot_dur);
+        if (max_duration - tot_dur < clip_details.duration) await clip.subclip(0, max_duration - tot_dur);
         // only shorten clips if the calculated clip length (req_dur) is shorter than the actual clip to prevent still image
-        else if (req_dur < clip_details.duration) clip.subclip(0, req_dur);
+        else if (req_dur < clip_details.duration) await clip.subclip(0, req_dur);
 
         await clip.setFPS(30);
 

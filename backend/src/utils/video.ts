@@ -24,9 +24,11 @@ class VideoProcessor {
 
   getVideoInfo(): Promise<VideoInfo> {
     return new Promise((resolve, reject) => {
-      const command = `${ffmpeg} -i ${this.inputFilePath}`;
+      const command = `${ffmpeg} -i ${this.inputFilePath} -f null -`;
 
       exec(command, (error, stdout, stderr) => {
+        console.log('stderr');
+        console.log({ stderr });
         if (error) {
           console.error('Error occurred while getting video info:', error);
           reject(error);
@@ -37,8 +39,8 @@ class VideoProcessor {
         const info: VideoInfo = {
           duration: this.parseDuration(outputLines),
           fps: this.parseFPS(outputLines),
-          width: this.parseResolution(outputLines, 'width'),
-          height: this.parseResolution(outputLines, 'height'),
+          width: this.parseWidth(outputLines),
+          height: this.parseHeight(outputLines),
         };
 
         this.duration = info.duration;
@@ -53,7 +55,7 @@ class VideoProcessor {
 
   cropVideoTo1920x1080(): Promise<void> {
     return new Promise((resolve, reject) => {
-      const command = `${ffmpeg} -i ${this.inputFilePath} -vf "crop=1920:1080" -c:a copy -c:v libx264 -preset veryfast ${this.outputFilePath}`;
+      const command = `${ffmpeg} -i ${this.inputFilePath} -vf "crop=1920:1080" -c:a copy -c:v libx264 -preset veryfast ${this.outputFilePath} -y`;
 
       exec(command, (error, stdout, stderr) => {
         if (error) {
@@ -74,7 +76,7 @@ class VideoProcessor {
       let start_sec: number = typeof t_start === 'string' ? this.convertTimeStringToSeconds(t_start) : t_start;
       let end_sec: number;
 
-      let duration_command = `${ffmpeg} -i ${this.inputFilePath} -hide_banner -f null -`;
+      const duration_command = `${ffmpeg} -i ${this.inputFilePath} -hide_banner -f null -`;
       exec(duration_command, (error, stdout, stderr) => {
         if (error) {
           console.error('Error occurred while fetching duration:', error);
@@ -104,12 +106,13 @@ class VideoProcessor {
           end_sec = clip_duration;
         }
 
-        let command = `${ffmpeg} -i ${this.inputFilePath} -ss ${start_sec} -c copy`;
+        let command = `${ffmpeg} -i ${this.inputFilePath} -ss ${start_sec} -c copy -y`;
         if (end_sec !== undefined) {
           command += ` -to ${end_sec}`;
         }
         command += ` ${this.outputFilePath}`;
 
+        if (end_sec <= start_sec - 1) return this.inputFilePath;
         exec(command, (error, stdout, stderr) => {
           if (error) {
             console.error('Error occurred while creating subclip:', error);
@@ -131,7 +134,7 @@ class VideoProcessor {
 
   setFPS(fps: number): Promise<void> {
     return new Promise((resolve, reject) => {
-      const command = `${ffmpeg} -i ${this.inputFilePath} -vf "fps=${fps}" -c:a copy ${this.outputFilePath}`;
+      const command = `${ffmpeg} -i ${this.inputFilePath} -vf "fps=${fps}" -c:a copy ${this.outputFilePath} -y`;
 
       exec(command, (error, stdout, stderr) => {
         if (error) {
@@ -148,7 +151,7 @@ class VideoProcessor {
 
   removeAudio(): Promise<void> {
     return new Promise((resolve, reject) => {
-      const command = `${ffmpeg} -i ${this.inputFilePath} -c:v copy -an ${this.outputFilePath}`;
+      const command = `${ffmpeg} -i ${this.inputFilePath} -c:v copy -an ${this.outputFilePath} -y`;
 
       exec(command, (error, stdout, stderr) => {
         if (error) {
@@ -156,7 +159,7 @@ class VideoProcessor {
           reject(error);
         } else {
           console.log('Audio removed successfully!');
-          resolve();
+          resolve(undefined);
         }
       });
     });
@@ -189,16 +192,28 @@ class VideoProcessor {
     return parseFloat(fpsMatch[1]);
   }
 
-  private parseResolution(outputLines: string[], dimension: 'width' | 'height'): number {
-    const resolutionLine = outputLines.find((line) => line.includes('Stream') && line.includes('Video'));
-    if (!resolutionLine) {
-      throw new Error(`Video resolution information not found (${dimension})`);
+  private parseWidth(outputLines: string[]): number {
+    const streamLine = outputLines.find((line) => line.includes('Video'));
+    if (!streamLine) {
+      throw new Error('Video stream information not found');
     }
-    const resolutionMatch = resolutionLine.match(new RegExp(`${dimension}=(\\d+)`));
-    if (!resolutionMatch) {
-      throw new Error(`Failed to parse video ${dimension}`);
+    const dimensionMatch = streamLine.match(/\b(\d+)x(\d+)\b/);
+    if (!dimensionMatch) {
+      throw new Error('Failed to parse video dimension');
     }
-    return parseInt(resolutionMatch[1]);
+    return parseInt(dimensionMatch[1]);
+  }
+
+  private parseHeight(outputLines: string[]): number {
+    const streamLine = outputLines.find((line) => line.includes('Video'));
+    if (!streamLine) {
+      throw new Error('Video stream information not found');
+    }
+    const dimensionMatch = streamLine.match(/\b(\d+)x(\d+)\b/);
+    if (!dimensionMatch) {
+      throw new Error('Failed to parse video dimension');
+    }
+    return parseInt(dimensionMatch[2]);
   }
 }
 
