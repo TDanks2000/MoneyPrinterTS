@@ -3,6 +3,8 @@ import { GPTModel } from '../types/types';
 
 import colors from 'colors';
 import ffmpegPath from 'ffmpeg-static';
+import ffprobe from 'ffprobe';
+import { path as ffprobePath } from 'ffprobe-static';
 import { exec } from 'node:child_process';
 import path from 'node:path';
 import * as uuid from 'uuid';
@@ -232,27 +234,24 @@ interface AudioInfo {
   sampleRate: number;
 }
 
-function getAudioInfo(inputFilePath: string): Promise<AudioInfo> {
-  return new Promise((resolve, reject) => {
-    const command = `${ffmpegPath} -i ${inputFilePath} -f null -`;
+async function getAudioInfo(inputFilePath: string): Promise<AudioInfo> {
+  try {
+    const audioInfo = await ffprobe(inputFilePath, { path: ffprobePath });
 
-    exec(command, (error, stdout, stderr) => {
-      if (error) {
-        console.error('Error occurred while getting audio info:', error);
-        reject(error);
-        return;
-      }
+    const audioStream = audioInfo.streams.find((stream) => stream.codec_type === 'audio');
 
-      const outputLines = stderr.split('\n');
+    if (!audioStream) {
+      throw new Error('Audio stream not found in the file.');
+    }
 
-      const info: AudioInfo = {
-        duration: parseDuration(outputLines),
-        sampleRate: parseSampleRate(outputLines),
-      };
-
-      resolve(info);
-    });
-  });
+    return {
+      duration: parseFloat(audioStream.duration ?? '0'),
+      sampleRate: audioStream.sample_rate ?? 0,
+    };
+  } catch (error) {
+    console.error('Error occurred while getting audio info:', error);
+    throw error;
+  }
 }
 
 function parseDuration(outputLines: string[]): number {

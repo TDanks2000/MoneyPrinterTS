@@ -1,5 +1,6 @@
 import colors from 'colors';
 import fs from 'node:fs';
+import ora from 'ora';
 
 import playsound from 'play-sound';
 const player = playsound();
@@ -127,6 +128,7 @@ class TikTokVoice {
     filename: string = 'output.mp3',
     play_sound: boolean = false,
   ): Promise<void> {
+    const spinner = ora('Generating audio...').start();
     // Checking if the website is available
     const response = await this.get_api_response();
     if (response.status === 200) {
@@ -139,6 +141,7 @@ class TikTokVoice {
         console.log(
           colors.red('[-] TTS Service not available and probably temporarily rate limited, try again later...'),
         );
+        spinner.stop();
         return;
       }
     }
@@ -146,16 +149,19 @@ class TikTokVoice {
     // Checking if arguments are valid
     if (voice === 'none') {
       console.log(colors.red('[-] Please specify a voice'));
+      spinner.stop();
       return;
     }
 
     if (!VOICES.includes(voice)) {
       console.log(colors.red('[-] Voice not available'));
+      spinner.stop();
       return;
     }
 
     if (!text) {
       console.log(colors.red('[-] Please specify a text'));
+      spinner.stop();
       return;
     }
 
@@ -172,6 +178,7 @@ class TikTokVoice {
 
         if (audioBase64Data === 'error') {
           console.log(colors.red('[-] This voice is unavailable right now'));
+          spinner.stop();
           return;
         }
       } else {
@@ -192,6 +199,7 @@ class TikTokVoice {
 
           if (base64Data === 'error') {
             console.log(colors.red('[-] This voice is unavailable right now'));
+            spinner.stop();
             return;
           }
 
@@ -213,11 +221,13 @@ class TikTokVoice {
 
       await this.save_audio_file(audioBase64Data, filename);
       console.log(colors.green("[+] Audio file saved successfully as '" + filename + "'"));
+      spinner.succeed('Audio file generated successfully');
       if (play_sound) {
         player.play(filename);
       }
     } catch (error) {
       console.log(colors.red('[-] An error occurred during TTS: ' + (error as Error).message));
+      spinner.stop();
     }
   }
 }

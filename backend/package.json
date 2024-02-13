@@ -9,15 +9,21 @@
   },
   "devDependencies": {
     "@types/colors": "^1.2.1",
+    "@types/ffprobe": "^1.1.8",
+    "@types/ffprobe-static": "^2.0.3",
+    "@types/play-sound": "^1.1.2",
     "@types/uuid": "^9.0.8",
     "nodemon": "^3.0.3"
   },
   "dependencies": {
-    "@types/play-sound": "^1.1.2",
     "assemblyai": "^4.2.2",
     "fastify": "^4.26.0",
     "ffmpeg-static": "^5.2.0",
+    "ffprobe": "^1.1.2",
+    "ffprobe-static": "^3.1.0",
+    "jimp": "^0.22.10",
     "openai": "^4.27.0",
+    "ora": "5.4.1",
     "play-sound": "^1.1.6",
     "subtitle": "^4.2.1",
     "uuid": "^9.0.1"

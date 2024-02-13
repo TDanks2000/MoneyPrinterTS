@@ -1,8 +1,12 @@
 import colors from 'colors';
-import ffmpeg from 'ffmpeg-static';
+import ffmpegPath from 'ffmpeg-static';
+import ffprobe from 'ffprobe';
+import { path as ffprobePath } from 'ffprobe-static';
 import { exec } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { promisify } from 'node:util';
+import ora from 'ora';
 import * as uuid from 'uuid';
 import { assemblyai } from '../utils';
 import VideoProcessor from '../utils/video';
@@ -32,11 +36,13 @@ class Video {
    */
 
   async __generate_subtitles_assemblyai(audio_path: string): Promise<string> {
+    const spinner = ora('Generating subtitles...').start();
     const transcript = await assemblyai.transcripts.transcribe({
       audio: audio_path,
     });
 
     if (transcript.status === 'error') {
+      spinner.fail('Error generating subtitles');
       throw new Error(transcript.error);
     }
 
@@ -48,6 +54,7 @@ class Video {
       },
     });
 
+    spinner.succeed('Subtitles generated');
     const subtitles = await r.text();
     return subtitles;
   }
@@ -60,6 +67,8 @@ class Video {
    * @returns {string} The generated subtitles.
    */
   async __generate_subtitles_locally(sentences: string[], audio_clips: any[]): Promise<string> {
+    const spinner = ora('Generating subtitles...').start();
+
     const convertToSrtTimeFormat = (totalSeconds: number): string =>
       totalSeconds === 0 ? '0:00:00,0' : new Date(totalSeconds * 1000).toISOString().substr(11, 12).replace('.', ',');
 
@@ -81,6 +90,7 @@ class Video {
       start_time += duration; // Update start time for the next subtitle
     }
 
+    spinner.succeed('Subtitles generated');
     return subtitles.join('\n');
   }
 
@@ -108,7 +118,6 @@ class Video {
     }
 
     try {
-      console.log(subtitles);
       await fs.promises.writeFile(subtitles_path, subtitles);
     } catch (error) {
       console.log(colors.red(`[-] Error writing subtitles to file: ${error}`));
@@ -128,12 +137,14 @@ class Video {
    * @returns {string} The path to the combined video.
    */
   async combine_videos(video_paths: string[], max_duration: number, max_clip_duration: number): Promise<string> {
+    const spinner = ora('Combining videos...').start();
     const video_id = uuid.v4();
     const combined_video_path = path.join(__dirname, `../../temp/${video_id}.mp4`);
 
     // Required duration of each clip
     const req_dur = max_duration / video_paths.length;
 
+    spinner.text = `[+] Each clip will be maximum ${req_dur} seconds long.`;
     console.log(colors.blue('[+] Combining videos...'));
     console.log(colors.blue(`[+] Each clip will be maximum ${req_dur} seconds long.`));
 
@@ -167,6 +178,7 @@ class Video {
     }
 
     await this.concatenateVideoClips(clips, combined_video_path);
+    spinner.succeed('Videos combined successfully');
     return combined_video_path;
   }
 
@@ -183,22 +195,55 @@ class Video {
     throw new Error('Method not implemented');
   }
 
-  concatenateVideoClips(videoProcessors: VideoProcessor[], outputFilePath: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const inputFiles = videoProcessors.map((vp, index) => `-i ${vp.inputFilePath}`).join(' ');
-      const filter = videoProcessors.map((vp, index) => `[${index}:v:0][${index}:a:0]`).join(' ');
-      const command = `${ffmpeg} ${inputFiles} -filter_complex "${filter} concat=n=${videoProcessors.length}:v=1:a=1 [v] [a]" -map "[v]" -map "[a]" ${outputFilePath}`;
+  //  FIXME:
+  async concatenateVideoClips(clips: VideoProcessor[], outputFilePath: string): Promise<void> {
+    try {
+      // Collect stream information and specifiers:
+      const streamInfos = await Promise.all(
+        clips.map(async (clip) => {
+          const info = await ffprobe(clip.inputFilePath, { path: ffprobePath });
+          return {
+            videoStream: info.streams.find((stream) => stream.codec_type === 'video'),
+            audioStream: info.streams.find((stream) => stream.codec_type === 'audio'),
+          };
+        }),
+      );
 
-      exec(command, (error, stdout, stderr) => {
-        if (error) {
-          console.error('Error occurred while concatenating video clips:', error);
-          reject(error);
-        } else {
-          console.log('Video clips concatenated successfully!');
-          resolve();
-        }
-      });
-    });
+      const videoSpecifiers = streamInfos.map((info, index) => `[${index}:v:0]`);
+      const audioSpecifiers = streamInfos
+        .map((info, index) => (info.audioStream ? `[${index}:a:0]` : null))
+        .filter(Boolean);
+
+      // Construct filter complex with appropriate concat parameters:
+      const filterComplex = `${videoSpecifiers.join(' ')} ${audioSpecifiers.join(' ')}
+        concat=n=${clips.length}:v=1:a=${audioSpecifiers.length} [v] [a]`;
+
+      // Build the FFmpeg command:
+      let command = `${ffmpegPath} ${clips.map((clip) => `-i ${clip.inputFilePath}`).join(' ')}
+        -filter_complex "${filterComplex}"
+        -map "[v]" ${audioSpecifiers.length > 0 ? '-map "[a]"' : ''}
+        -c:v copy -c:a aac ${outputFilePath}`;
+
+      // Remove any line breaks and extra spaces from the command:
+      command = command.replace(/\s+/g, ' ').trim();
+
+      // Execute the command with error handling:
+      await promisify(exec)(command);
+
+      console.log(colors.green('Video clips concatenated successfully!'));
+    } catch (error) {
+      console.error(colors.red('Error occurred while concatenating video clips:'), error);
+      throw error; // Re-throw for caller handling
+    }
+  }
+
+  async anyInputHasAudio(videoProcessors: VideoProcessor[]): Promise<boolean> {
+    for (const vp of videoProcessors) {
+      if (await vp.hasAudio()) {
+        return true;
+      }
+    }
+    return false;
   }
 }
 

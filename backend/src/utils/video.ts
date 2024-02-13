@@ -1,11 +1,17 @@
 import { exec } from 'child_process';
 import ffmpeg from 'ffmpeg-static';
+import ffprobe from 'ffprobe';
+import { path as ffprobePath } from 'ffprobe-static';
+import ora from 'ora';
+import { promisify } from 'util';
+import Crop from './crop';
 
 interface VideoInfo {
   duration: number;
   fps: number;
   width: number;
   height: number;
+  [x: string]: string | number;
 }
 
 class VideoProcessor {
@@ -22,147 +28,96 @@ class VideoProcessor {
     this.outputFilePath = outputFilePath;
   }
 
-  getVideoInfo(): Promise<VideoInfo> {
-    return new Promise((resolve, reject) => {
-      const command = `${ffmpeg} -i ${this.inputFilePath} -f null -`;
+  async getVideoInfo(): Promise<VideoInfo> {
+    const info = await ffprobe(this.inputFilePath, { path: ffprobePath });
+    const stream = info.streams[0]; // Assuming the first stream is the video stream
 
-      exec(command, (error, stdout, stderr) => {
-        console.log('stderr');
-        console.log({ stderr });
-        if (error) {
-          console.error('Error occurred while getting video info:', error);
-          reject(error);
-          return;
-        }
-
-        const outputLines = stderr.split('\n');
-        const info: VideoInfo = {
-          duration: this.parseDuration(outputLines),
-          fps: this.parseFPS(outputLines),
-          width: this.parseWidth(outputLines),
-          height: this.parseHeight(outputLines),
-        };
-
-        this.duration = info.duration;
-        this.fps = info.fps;
-        this.width = info.width;
-        this.height = info.height;
-
-        resolve(info);
-      });
-    });
+    return {
+      duration: parseFloat(stream.duration ?? '0'),
+      fps: parseFloat(stream.r_frame_rate),
+      width: stream.width ?? 0,
+      height: stream.height ?? 0,
+      bit_rate: stream.bit_rate ?? 0,
+    };
   }
 
-  cropVideoTo1920x1080(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const command = `${ffmpeg} -i ${this.inputFilePath} -vf "crop=1920:1080" -c:a copy -c:v libx264 -preset veryfast ${this.outputFilePath} -y`;
-
-      exec(command, (error, stdout, stderr) => {
-        if (error) {
-          console.error('Error occurred while cropping the video:', error);
-          reject(error);
-        } else {
-          this.width = 1920;
-          this.height = 1080;
-          console.log('Video cropped successfully!');
-          resolve();
-        }
-      });
-    });
+  async cropVideoTo1920x1080(): Promise<void> {
+    try {
+      const crop = new Crop(this.inputFilePath, this.inputFilePath);
+      await crop.start({ width: 1920, height: 1080 });
+      return;
+    } catch (error) {
+      throw error;
+    }
   }
 
-  subclip = (t_start: number | string, t_end?: number | string): Promise<string | null> => {
-    return new Promise((resolve, reject) => {
+  async subclip(t_start: number | string, t_end?: number | string): Promise<string | null> {
+    const spinner = ora(`clipping ${this.inputFilePath}`).start();
+    try {
       let start_sec: number = typeof t_start === 'string' ? this.convertTimeStringToSeconds(t_start) : t_start;
       let end_sec: number;
 
       const duration_command = `${ffmpeg} -i ${this.inputFilePath} -hide_banner -f null -`;
-      exec(duration_command, (error, stdout, stderr) => {
-        if (error) {
-          console.error('Error occurred while fetching duration:', error);
-          reject(error);
-          return;
+      const { stderr: duration_output } = await promisify(exec)(duration_command);
+
+      const duration_match = duration_output.match(/Duration: (\d+):(\d+):(\d+\.\d+)/);
+      if (!duration_match) {
+        throw new Error('Failed to parse duration');
+      }
+
+      const hours = parseInt(duration_match[1]);
+      const minutes = parseInt(duration_match[2]);
+      const seconds = parseFloat(duration_match[3]);
+      const clip_duration = hours * 3600 + minutes * 60 + seconds;
+
+      if (t_end !== undefined) {
+        end_sec = typeof t_end === 'string' ? this.convertTimeStringToSeconds(t_end) : t_end;
+        if (end_sec < 0) {
+          end_sec = clip_duration + end_sec;
         }
+      } else {
+        end_sec = clip_duration;
+      }
 
-        const duration_output = stderr.toString();
-        const duration_match = duration_output.match(/Duration: (\d+):(\d+):(\d+\.\d+)/);
-        if (!duration_match) {
-          console.error('Failed to parse duration from FFmpeg output:', duration_output);
-          reject(new Error('Failed to parse duration'));
-          return;
-        }
+      let command = `${ffmpeg} -i ${this.inputFilePath} -ss ${start_sec} -c copy -y`;
+      if (end_sec !== undefined) {
+        command += ` -to ${end_sec}`;
+      }
+      command += ` ${this.outputFilePath}`;
 
-        const hours = parseInt(duration_match[1]);
-        const minutes = parseInt(duration_match[2]);
-        const seconds = parseFloat(duration_match[3]);
-        const clip_duration = hours * 3600 + minutes * 60 + seconds;
+      if (end_sec <= start_sec - 1) return this.inputFilePath;
+      await promisify(exec)(command);
 
-        if (t_end !== undefined) {
-          end_sec = typeof t_end === 'string' ? this.convertTimeStringToSeconds(t_end) : t_end;
-          if (end_sec < 0) {
-            end_sec = clip_duration + end_sec;
-          }
-        } else {
-          end_sec = clip_duration;
-        }
+      this.duration = end_sec - start_sec;
+      console.log('Subclip created successfully!');
+      spinner.succeed('Subclip created successfully!');
 
-        let command = `${ffmpeg} -i ${this.inputFilePath} -ss ${start_sec} -c copy -y`;
-        if (end_sec !== undefined) {
-          command += ` -to ${end_sec}`;
-        }
-        command += ` ${this.outputFilePath}`;
-
-        if (end_sec <= start_sec - 1) return this.inputFilePath;
-        exec(command, (error, stdout, stderr) => {
-          if (error) {
-            console.error('Error occurred while creating subclip:', error);
-            reject(error);
-          } else {
-            this.duration = end_sec - start_sec;
-            console.log('Subclip created successfully!');
-            resolve(this.outputFilePath);
-          }
-        });
-      });
-    });
-  };
-
-  convertTimeStringToSeconds = (time_string: string): number => {
-    const [hours, minutes, seconds] = time_string.split(':').map(parseFloat);
-    return hours * 3600 + minutes * 60 + seconds;
-  };
-
-  setFPS(fps: number): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const command = `${ffmpeg} -i ${this.inputFilePath} -vf "fps=${fps}" -c:a copy ${this.outputFilePath} -y`;
-
-      exec(command, (error, stdout, stderr) => {
-        if (error) {
-          console.error('Error occurred while setting fps:', error);
-          reject(error);
-        } else {
-          this.fps = fps;
-          console.log('FPS set successfully!');
-          resolve();
-        }
-      });
-    });
+      return this.outputFilePath;
+    } catch (error) {
+      throw error;
+    }
   }
 
-  removeAudio(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const command = `${ffmpeg} -i ${this.inputFilePath} -c:v copy -an ${this.outputFilePath} -y`;
+  async setFPS(fps: number): Promise<void> {
+    const command = `${ffmpeg} -i ${this.inputFilePath} -vf "fps=${fps}" -c:a copy ${this.outputFilePath} -y`;
+    await promisify(exec)(command);
 
-      exec(command, (error, stdout, stderr) => {
-        if (error) {
-          console.error('Error occurred while removing audio:', error);
-          reject(error);
-        } else {
-          console.log('Audio removed successfully!');
-          resolve(undefined);
-        }
-      });
-    });
+    this.fps = fps;
+    console.log('FPS set successfully!');
+  }
+
+  async removeAudio(): Promise<void> {
+    const spinner = ora(`Removing audio from ${this.inputFilePath}`).start();
+    try {
+      const command = `${ffmpeg} -i ${this.inputFilePath} -c:v copy -an ${this.outputFilePath} -y`;
+      await promisify(exec)(command);
+
+      console.log('Audio removed successfully!');
+      spinner.succeed('Audio removed successfully!');
+    } catch (error) {
+      spinner.stop();
+      throw error;
+    }
   }
 
   private parseDuration(outputLines: string[]): number {
@@ -214,6 +169,26 @@ class VideoProcessor {
       throw new Error('Failed to parse video dimension');
     }
     return parseInt(dimensionMatch[2]);
+  }
+
+  private convertTimeStringToSeconds = (time_string: string): number => {
+    const [hours, minutes, seconds] = time_string.split(':').map(parseFloat);
+    return hours * 3600 + minutes * 60 + seconds;
+  };
+
+  async hasAudio(): Promise<boolean> {
+    const command = `${ffmpeg} -i ${this.inputFilePath} -f null -`;
+    const { stderr } = await promisify(exec)(command);
+    return this.checkHasAudio(stderr.split('\n'));
+  }
+
+  private checkHasAudio(outputLines: string[]): boolean {
+    for (const line of outputLines) {
+      if (line.includes('Audio')) {
+        return true;
+      }
+    }
+    return false;
   }
 }
 
